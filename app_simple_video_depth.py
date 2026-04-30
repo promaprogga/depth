@@ -98,7 +98,7 @@ def process_media(file_path):
                 
                 # Visualization (Depth Only)
                 d_min_full, d_max_full = depth_map.min(), depth_map.max()
-                depth_norm = 255.0 * (depth_map - d_min_full) / (depth_max_full - d_min_full) if d_max_full > d_min_full else np.zeros_like(depth_map)
+                depth_norm = 255.0 * (depth_map - d_min_full) / (d_max_full - d_min_full) if d_max_full > d_min_full else np.zeros_like(depth_map)
                 depth_color = cv2.applyColorMap(depth_norm.astype(np.uint8), cv2.COLORMAP_INFERNO)
                 depth_color_resized = cv2.resize(depth_color, (w, h))
                 processed_frames.append(cv2.cvtColor(depth_color_resized, cv2.COLOR_BGR2RGB))
