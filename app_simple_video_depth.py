@@ -46,18 +46,15 @@ def process_video(video_path):
     
     out_frames = []
     
+    from moviepy.editor import ImageSequenceClip
+    
     # Use current directory for output for easier access
     out_path = os.path.join(os.getcwd(), "output_depth_side_by_side.mp4")
     
     h, w, _ = frames[0].shape
-    # Side by side means 2 * width
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
-    out_video = cv2.VideoWriter(out_path, fourcc, fps, (w * 2, h))
-    
-    if not out_video.isOpened():
-        print(f"Error: Could not open VideoWriter for {out_path}")
-        return None
+    processed_frames = []
 
+    print("Processing frames...")
     # Process sequentially to avoid OOM
     for i in range(len(frames)):
         with torch.no_grad():
@@ -77,32 +74,39 @@ def process_video(video_path):
             # Apply color map
             depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
             
-            # CRITICAL: Resize depth map back to original frame size to match input for side-by-side
-            # and to match VideoWriter initialization
+            # Resize depth map back to original frame size
             depth_color_resized = cv2.resize(depth_color, (w, h))
             
-            # Convert original frame back to BGR for OpenCV VideoWriter
-            orig_bgr = cv2.cvtColor(frames[i], cv2.COLOR_RGB2BGR)
+            # depth_color_resized is BGR, original frames[i] is RGB
+            # Convert depth to RGB for moviepy
+            depth_rgb = cv2.cvtColor(depth_color_resized, cv2.COLOR_BGR2RGB)
             
             # Stack side-by-side
-            combined_frame = np.hstack([orig_bgr, depth_color_resized])
-            
-            out_video.write(combined_frame)
+            combined_frame = np.hstack([frames[i], depth_rgb])
+            processed_frames.append(combined_frame)
             
         if (i + 1) % 10 == 0:
             print(f"Processed {i + 1}/{len(frames)} frames")
             
-    out_video.release()
-    
-    # Clear memory
+    # Clear model from memory before video encoding to save VRAM
     del model
     torch.cuda.empty_cache()
     
+    print("Encoding video with moviepy...")
+    try:
+        clip = ImageSequenceClip(processed_frames, fps=fps)
+        clip.write_videofile(out_path, codec="libx264", audio=False)
+    except Exception as e:
+        error_msg = f"Error during video encoding: {str(e)}"
+        print(error_msg)
+        return None, error_msg
     
     end_time = time.time()
     duration = end_time - start_time
-    print(f"Finished processing in {duration:.2f} seconds. Output saved to {out_path}")
-    return out_path, f"Processing completed in {duration:.2f} seconds"
+    success_msg = f"Processing completed in {duration:.2f} seconds"
+    print(f"Finished. Output saved to {out_path}")
+    
+    return out_path, success_msg
 
 with gr.Blocks(title="Simple DA3 Video Depth") as demo:
     gr.Markdown("# 🌊 Depth Anything 3: Simple Video Depth Estimation")
