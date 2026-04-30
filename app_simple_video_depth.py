@@ -129,13 +129,13 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
         with gr.Column():
             input_file = gr.File(label="Upload Image or Video")
             # Combined preview area
-            with gr.Box():
+            with gr.Group():
                 input_img_view = gr.Image(label="Input Preview", visible=False, height=250)
                 input_vid_view = gr.Video(label="Input Preview", visible=False, height=250)
             btn = gr.Button("Process Media", variant="primary")
         with gr.Column():
             # Combined output area
-            with gr.Box():
+            with gr.Group():
                 output_image = gr.Image(label="Depth Result", visible=False, height=250)
                 output_video = gr.Video(label="Depth Result", visible=False, height=250)
             output_text = gr.Textbox(label="Analysis Stats", interactive=False)
