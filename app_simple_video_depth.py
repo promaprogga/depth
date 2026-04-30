@@ -16,7 +16,7 @@ def process_media(file_path):
     filename = file_path
     ext = os.path.splitext(filename)[1].lower()
     is_image = ext in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
-    is_video = ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
+    is_video = ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.gif']
     
     if not is_image and not is_video:
         return gr.update(visible=False), gr.update(visible=False), f"Unsupported format: {ext}"
@@ -140,10 +140,10 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
     def on_upload(file):
         if not file: return gr.update(visible=False), gr.update(visible=False)
         ext = os.path.splitext(file)[1].lower()
-        if ext in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
-            return gr.update(visible=True, value=file), gr.update(visible=False, value=None)
-        else:
+        if ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.gif']:
             return gr.update(visible=False, value=None), gr.update(visible=True, value=file)
+        else:
+            return gr.update(visible=True, value=file), gr.update(visible=False, value=None)
 
     input_file.change(on_upload, inputs=input_file, outputs=[input_img_view, input_vid_view])
     
