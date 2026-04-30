@@ -123,6 +123,7 @@ def process_video(video_path):
     duration = end_time - start_time
     stats_msg = (
         f"Processing completed in {duration:.2f}s\n"
+        f"Video Info: {len(frames)} frames @ {fps:.2f} FPS\n"
         f"Analysis: {liveness_result} (3Dness Score: {liveness_conf:.1f}%)\n"
         f"Note: High scores indicate 3D contours (Real), low scores indicate flat surfaces (AI/Spoof)."
     )
