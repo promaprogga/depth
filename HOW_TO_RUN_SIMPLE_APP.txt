@@ -1,0 +1,69 @@
+Depth Anything 3: Video Depth Estimation Guide
+=============================================
+
+This guide provides detailed instructions on how to run both the Gradio Web Interface and the Command Line Interface (CLI) for simplified video depth estimation.
+
+1. Prerequisites & Environment Setup
+------------------------------------
+Ensure you have Python 3.10+ installed. It is highly recommended to use a virtual environment.
+
+### Option A: Use existing environment
+If you already have an environment with dependencies installed:
+- **Windows (PowerShell/CMD):** `.\venv\Scripts\activate`
+- **Linux/macOS/WSL:** `source venv/bin/activate`
+
+*Note: If you see a 'bin' folder instead of 'Scripts' on Windows, you might be using an environment created on Linux/WSL. In this case, use Option B.*
+
+### Option B: Fresh Setup (Recommended for Windows)
+If you need to set up the environment from scratch:
+```powershell
+# Create venv
+python -m venv venv
+
+# Activate venv
+.\venv\Scripts\activate
+
+# Install dependencies
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118  # For NVIDIA GPU
+pip install -r requirements.txt
+pip install -e .
+```
+
+2. Running the Gradio Web Interface
+-----------------------------------
+The web interface allows you to upload videos and see results in your browser.
+
+- **Command:** `python app_simple_video_depth.py`
+- **Access:** Open your browser and go to `http://127.0.0.1:7861`
+- **Usage:**
+  1. Drag and drop your `.mp4` video into the "Input Video" box.
+  2. Click **"Process Video"**.
+  3. Monitor progress in your terminal.
+  4. View and download the resulting depth video from the right-hand panel.
+
+3. Running the Command Line Interface (CLI)
+-------------------------------------------
+The CLI is faster for batch processing or when you don't need a UI. It saves the output directly to disk.
+
+- **Basic Usage:**
+  ```powershell
+  python app_video_depth_cli.py path/to/your/video.mp4
+  ```
+- **Custom Output Path:**
+  ```powershell
+  python app_video_depth_cli.py input.mp4 -o custom_output.mp4
+  ```
+- **Features:**
+  - Uses `cv2.VideoWriter` for high compatibility.
+  - Automatically saves with a `_depth` suffix if no output path is provided.
+  - Prints real-time progress percentages.
+
+4. Troubleshooting
+------------------
+- **CUDA Errors:** If you have an NVIDIA GPU, ensure your drivers and CUDA Toolkit are up to date. The script will fall back to CPU if no GPU is found, but it will be significantly slower.
+- **Missing Modules:** If you get `ModuleNotFoundError`, ensure you have run `pip install -e .` from the root directory to register the `depth_anything_3` package.
+- **Memory (OOM) Issues:** For very high-resolution videos, ensure your GPU has enough VRAM. The CLI version is more memory-efficient as it processes frames one by one without a heavy UI overhead.
+
+Notes:
+- Both scripts use `depth-anything/DA3MONO-LARGE`, which will be downloaded from Hugging Face on the first run.
+- Default output color map is `INFERNO` (dark blue to bright yellow/white).
