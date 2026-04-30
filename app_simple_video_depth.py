@@ -140,10 +140,13 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
     def on_upload(file):
         if not file: return gr.update(visible=False), gr.update(visible=False)
         ext = os.path.splitext(file)[1].lower()
-        if ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.gif']:
+        # Show GIFs in the Image viewer because they are technically images and don't have a video timeline (avoids NaN:NaN)
+        if ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']:
             return gr.update(visible=False, value=None), gr.update(visible=True, value=file)
-        else:
+        elif ext == '.gif' or ext in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
             return gr.update(visible=True, value=file), gr.update(visible=False, value=None)
+        else:
+            return gr.update(visible=False, value=None), gr.update(visible=False, value=None)
 
     input_file.change(on_upload, inputs=input_file, outputs=[input_img_view, input_vid_view])
     
