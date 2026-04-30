@@ -44,14 +44,19 @@ def process_video(video_path):
     
     out_frames = []
     
-    # Create temp output file
-    out_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
-    h, w, _ = frames[0].shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out_video = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+    # Use current directory for output for easier access
+    out_path = os.path.join(os.getcwd(), "output_depth_side_by_side.mp4")
     
+    h, w, _ = frames[0].shape
+    # Side by side means 2 * width
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out_video = cv2.VideoWriter(out_path, fourcc, fps, (w * 2, h))
+    
+    if not out_video.isOpened():
+        print(f"Error: Could not open VideoWriter for {out_path}")
+        return None
+
     # Process sequentially to avoid OOM
-    # For large videos, we do frame-by-frame
     for i in range(len(frames)):
         with torch.no_grad():
             pred = model.inference([frames[i]])
@@ -67,10 +72,20 @@ def process_video(video_path):
                 
             depth_uint8 = depth_norm.astype(np.uint8)
             
-            # Apply color map (INFERNO is commonly used for depth)
+            # Apply color map
             depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
             
-            out_video.write(depth_color)
+            # CRITICAL: Resize depth map back to original frame size to match input for side-by-side
+            # and to match VideoWriter initialization
+            depth_color_resized = cv2.resize(depth_color, (w, h))
+            
+            # Convert original frame back to BGR for OpenCV VideoWriter
+            orig_bgr = cv2.cvtColor(frames[i], cv2.COLOR_RGB2BGR)
+            
+            # Stack side-by-side
+            combined_frame = np.hstack([orig_bgr, depth_color_resized])
+            
+            out_video.write(combined_frame)
             
         if (i + 1) % 10 == 0:
             print(f"Processed {i + 1}/{len(frames)} frames")
