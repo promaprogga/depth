@@ -4,12 +4,14 @@ import tempfile
 import torch
 import numpy as np
 import os
+import time
 from depth_anything_3.api import DepthAnything3
 
 def process_video(video_path):
     if not video_path:
         return None
         
+    start_time = time.time()
     print(f"Processing video: {video_path}")
     
     # Load model on demand or reuse global one
@@ -96,8 +98,11 @@ def process_video(video_path):
     del model
     torch.cuda.empty_cache()
     
-    print(f"Finished processing. Output saved to {out_path}")
-    return out_path
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    print(f"Finished processing in {duration:.2f} seconds. Output saved to {out_path}")
+    return out_path, f"Processing completed in {duration:.2f} seconds"
 
 with gr.Blocks(title="Simple DA3 Video Depth") as demo:
     gr.Markdown("# 🌊 Depth Anything 3: Simple Video Depth Estimation")
@@ -108,9 +113,10 @@ with gr.Blocks(title="Simple DA3 Video Depth") as demo:
             input_video = gr.Video(label="Input Video")
             btn = gr.Button("Process Video", variant="primary")
         with gr.Column():
-            output_video = gr.Video(label="Depth Video", interactive=False)
+            output_video = gr.Video(label="Side-by-Side Depth Video", interactive=False)
+            output_text = gr.Textbox(label="Processing Stats", interactive=False)
             
-    btn.click(fn=process_video, inputs=input_video, outputs=output_video)
+    btn.click(fn=process_video, inputs=input_video, outputs=[output_video, output_text])
 
 if __name__ == "__main__":
     # Launch app
