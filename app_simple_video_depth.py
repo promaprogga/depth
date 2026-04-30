@@ -99,4 +99,5 @@ with gr.Blocks(title="Simple DA3 Video Depth") as demo:
 
 if __name__ == "__main__":
     # Launch app
-    demo.launch(server_name="127.0.0.1", server_port=7862, share=False)
+    # Launch app - letting Gradio find an available port automatically
+    demo.launch(server_name="0.0.0.0", share=False)
