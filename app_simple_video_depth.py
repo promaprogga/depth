@@ -108,9 +108,13 @@ def process_media(file_path):
         liveness_conf = min(100, max(0, (avg_variance - 0.12) / 0.18 * 100))
         liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
         
-        out_path = os.path.join(os.getcwd(), "output_depth.mp4")
+        # Use a temporary file to ensure Gradio can serve it reliably
+        fd, out_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        
         clip = ImageSequenceClip(processed_frames, fps=fps)
-        clip.write_videofile(out_path, codec="libx264", audio=False)
+        # yuv420p is the most compatible pixel format for web browsers
+        clip.write_videofile(out_path, codec="libx264", audio=False, ffmpeg_params=["-pix_fmt", "yuv420p"])
         
         duration = time.time() - start_time
         stats = f"Processed in {duration:.2f}s\nInfo: {len(frames)} frames @ {fps:.1f} FPS\nAnalysis: {liveness_result} (3Dness: {liveness_conf:.1f}%)\nAvg Variance: {avg_variance:.3f}"
