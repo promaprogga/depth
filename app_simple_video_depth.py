@@ -28,6 +28,7 @@ def process_media(file_path):
     model = DepthAnything3.from_pretrained(model_name).to(device)
 
     if is_image:
+        print(f"Processing image: {filename}")
         img = cv2.imread(filename)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
@@ -35,27 +36,22 @@ def process_media(file_path):
             pred = model.inference([img_rgb])
             depth_map = pred.depth[0]
             
-        # Refined Analysis: Real faces have more depth complexity
-        # Thresholds adjusted to be more restrictive
+        # Analysis (3Dness)
         center_h, center_w = depth_map.shape
         h_start, h_end = int(center_h * 0.2), int(center_h * 0.8)
         w_start, w_end = int(center_w * 0.2), int(center_w * 0.8)
         face_region = depth_map[h_start:h_end, w_start:w_end]
-        
         d_min, d_max = face_region.min(), face_region.max()
-        # Using a more robust variance metric
         norm_face = (face_region - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(face_region)
         variance = norm_face.std()
         
-        # New thresholds: <0.18 is suspicious, >0.25 is likely real
         liveness_conf = min(100, max(0, (variance - 0.12) / 0.18 * 100))
         liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
         
         # Color mapping
         depth_min, depth_max = depth_map.min(), depth_map.max()
         depth_norm = 255.0 * (depth_map - depth_min) / (depth_max - depth_min) if depth_max > depth_min else np.zeros_like(depth_map)
-        depth_uint8 = depth_norm.astype(np.uint8)
-        depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
+        depth_color = cv2.applyColorMap(depth_norm.astype(np.uint8), cv2.COLORMAP_INFERNO)
         depth_rgb_final = cv2.cvtColor(depth_color, cv2.COLOR_BGR2RGB)
         
         duration = time.time() - start_time
@@ -68,6 +64,8 @@ def process_media(file_path):
 
     else:
         from moviepy.editor import ImageSequenceClip
+        print(f"Processing video: {filename}")
+        
         cap = cv2.VideoCapture(filename)
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0 or np.isnan(fps): fps = 30.0
@@ -85,6 +83,7 @@ def process_media(file_path):
         variances = []
         h, w, _ = frames[0].shape
 
+        print(f"Processing {len(frames)} frames...")
         for i in range(len(frames)):
             with torch.no_grad():
                 pred = model.inference([frames[i]])
@@ -98,7 +97,7 @@ def process_media(file_path):
                 norm_face = (face_region - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(face_region)
                 variances.append(norm_face.std())
                 
-                # Visualization
+                # Visualization (Depth Only)
                 d_min_full, d_max_full = depth_map.min(), depth_map.max()
                 depth_norm = 255.0 * (depth_map - d_min_full) / (d_max_full - d_min_full) if d_max_full > d_min_full else np.zeros_like(depth_map)
                 depth_color = cv2.applyColorMap(depth_norm.astype(np.uint8), cv2.COLORMAP_INFERNO)
@@ -123,31 +122,33 @@ def process_media(file_path):
         
         return None, out_path, gr.update(visible=False), gr.update(visible=True), stats
 
-with gr.Blocks(title="DA3 Media Depth", css="#small_video { height: 300px !important; }") as demo:
-    gr.Markdown("# 🌊 Depth Anything 3: Media Depth Estimation")
+with gr.Blocks(title="DA3 Media Depth") as demo:
+    gr.Markdown("# 🌊 Depth Anything 3: Universal Media Depth")
     
     with gr.Row():
         with gr.Column():
-            input_media = gr.Image(label="Input Image", type="filepath", height=300)
-            input_video = gr.Video(label="Input Video", height=300)
+            input_file = gr.File(label="Upload Image or Video")
+            # Combined preview area
+            with gr.Box():
+                input_img_view = gr.Image(label="Input Preview", visible=False, height=250)
+                input_vid_view = gr.Video(label="Input Preview", visible=False, height=250)
             btn = gr.Button("Process Media", variant="primary")
         with gr.Column():
-            output_image = gr.Image(label="Depth Image", visible=False, height=300)
-            output_video = gr.Video(label="Depth Video", visible=False, height=300)
-            output_text = gr.Textbox(label="Processing Stats", interactive=False)
+            # Combined output area
+            with gr.Box():
+                output_image = gr.Image(label="Depth Result", visible=False, height=250)
+                output_video = gr.Video(label="Depth Result", visible=False, height=250)
+            output_text = gr.Textbox(label="Analysis Stats", interactive=False)
             
-    # Function to handle input selection
     def on_upload(file):
-        if not file: return gr.update(), gr.update()
+        if not file: return gr.update(visible=False), gr.update(visible=False)
         ext = os.path.splitext(file)[1].lower()
         if ext in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
             return gr.update(visible=True, value=file), gr.update(visible=False, value=None)
         else:
             return gr.update(visible=False, value=None), gr.update(visible=True, value=file)
 
-    input_file = gr.File(label="Upload Image or Video")
-    
-    input_file.change(on_upload, inputs=input_file, outputs=[input_media, input_video])
+    input_file.change(on_upload, inputs=input_file, outputs=[input_img_view, input_vid_view])
     
     btn.click(
         fn=process_media, 
