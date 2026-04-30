@@ -54,14 +54,34 @@ def process_video(video_path):
     h, w, _ = frames[0].shape
     processed_frames = []
 
-    print("Processing frames...")
+    print("Processing frames and analyzing liveness...")
     # Process sequentially to avoid OOM
+    liveness_scores = []
+    
     for i in range(len(frames)):
         with torch.no_grad():
             pred = model.inference([frames[i]])
             depth_map = pred.depth[0] # [H, W] float
             
-            # Normalize to 0-255 uint8 for video
+            # 1. Liveness Analysis: Calculate depth variance in the central region
+            # Real faces have depth contours; screens/photos are flat.
+            center_h, center_w = depth_map.shape
+            # Analyze the middle 50% of the frame
+            h_start, h_end = int(center_h * 0.25), int(center_h * 0.75)
+            w_start, w_end = int(center_w * 0.25), int(center_w * 0.75)
+            face_region = depth_map[h_start:h_end, w_start:w_end]
+            
+            # Normalize for consistent variance calculation
+            d_min, d_max = face_region.min(), face_region.max()
+            if d_max > d_min:
+                norm_region = (face_region - d_min) / (d_max - d_min)
+                # High variance (0.1+) indicates 3D structure; low variance indicates flatness
+                variance = norm_region.std()
+                liveness_scores.append(variance)
+            else:
+                liveness_scores.append(0)
+
+            # 2. Visualization
             depth_min = depth_map.min()
             depth_max = depth_map.max()
             if depth_max > depth_min:
@@ -70,27 +90,25 @@ def process_video(video_path):
                 depth_norm = np.zeros_like(depth_map)
                 
             depth_uint8 = depth_norm.astype(np.uint8)
-            
-            # Apply color map
             depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
-            
-            # Resize depth map back to original frame size
             depth_color_resized = cv2.resize(depth_color, (w, h))
-            
-            # depth_color_resized is BGR, original frames[i] is RGB
-            # Convert depth to RGB for moviepy
             depth_rgb = cv2.cvtColor(depth_color_resized, cv2.COLOR_BGR2RGB)
             
-            # Stack side-by-side
             combined_frame = np.hstack([frames[i], depth_rgb])
             processed_frames.append(combined_frame)
             
         if (i + 1) % 10 == 0:
             print(f"Processed {i + 1}/{len(frames)} frames")
             
-    # Clear model from memory before video encoding to save VRAM
+    # Clear model from memory
     del model
     torch.cuda.empty_cache()
+    
+    # Calculate average liveness score
+    # A score of > 0.15 is generally a real 3D object; < 0.08 is likely a flat surface (spoof)
+    avg_variance = np.mean(liveness_scores)
+    liveness_conf = min(100, max(0, (avg_variance - 0.05) / 0.15 * 100))
+    liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
     
     print("Encoding video with moviepy...")
     try:
@@ -103,10 +121,14 @@ def process_video(video_path):
     
     end_time = time.time()
     duration = end_time - start_time
-    success_msg = f"Processing completed in {duration:.2f} seconds"
-    print(f"Finished. Output saved to {out_path}")
+    stats_msg = (
+        f"Processing completed in {duration:.2f}s\n"
+        f"Analysis: {liveness_result} (3Dness Score: {liveness_conf:.1f}%)\n"
+        f"Note: High scores indicate 3D contours (Real), low scores indicate flat surfaces (AI/Spoof)."
+    )
+    print(f"Finished. {stats_msg}")
     
-    return out_path, success_msg
+    return out_path, stats_msg
 
 with gr.Blocks(title="Simple DA3 Video Depth") as demo:
     gr.Markdown("# 🌊 Depth Anything 3: Simple Video Depth Estimation")
