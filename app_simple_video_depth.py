@@ -10,7 +10,7 @@ from depth_anything_3.api import DepthAnything3
 
 def process_media(file_path):
     if not file_path:
-        return None, None, gr.update(visible=False), gr.update(visible=False), "Please upload a file."
+        return gr.update(visible=False), gr.update(visible=False), "Please upload a file."
         
     start_time = time.time()
     filename = file_path
@@ -19,7 +19,7 @@ def process_media(file_path):
     is_video = ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
     
     if not is_image and not is_video:
-        return None, None, gr.update(visible=False), gr.update(visible=False), f"Unsupported format: {ext}"
+        return gr.update(visible=False), gr.update(visible=False), f"Unsupported format: {ext}"
 
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,7 +28,6 @@ def process_media(file_path):
     model = DepthAnything3.from_pretrained(model_name).to(device)
 
     if is_image:
-        print(f"Processing image: {filename}")
         img = cv2.imread(filename)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
@@ -36,7 +35,7 @@ def process_media(file_path):
             pred = model.inference([img_rgb])
             depth_map = pred.depth[0]
             
-        # Analysis (3Dness)
+        # Analysis
         center_h, center_w = depth_map.shape
         h_start, h_end = int(center_h * 0.2), int(center_h * 0.8)
         w_start, w_end = int(center_w * 0.2), int(center_w * 0.8)
@@ -44,7 +43,6 @@ def process_media(file_path):
         d_min, d_max = face_region.min(), face_region.max()
         norm_face = (face_region - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(face_region)
         variance = norm_face.std()
-        
         liveness_conf = min(100, max(0, (variance - 0.12) / 0.18 * 100))
         liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
         
@@ -60,12 +58,10 @@ def process_media(file_path):
         del model
         torch.cuda.empty_cache()
         
-        return depth_rgb_final, None, gr.update(visible=True), gr.update(visible=False), stats
+        return gr.update(value=depth_rgb_final, visible=True), gr.update(value=None, visible=False), stats
 
     else:
         from moviepy.editor import ImageSequenceClip
-        print(f"Processing video: {filename}")
-        
         cap = cv2.VideoCapture(filename)
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0 or np.isnan(fps): fps = 30.0
@@ -77,13 +73,12 @@ def process_media(file_path):
             frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         cap.release()
         
-        if not frames: return None, None, gr.update(visible=False), gr.update(visible=False), "Failed to read video"
+        if not frames: return gr.update(visible=False), gr.update(visible=False), "Failed to read video"
 
         processed_frames = []
         variances = []
         h, w, _ = frames[0].shape
 
-        print(f"Processing {len(frames)} frames...")
         for i in range(len(frames)):
             with torch.no_grad():
                 pred = model.inference([frames[i]])
@@ -97,7 +92,7 @@ def process_media(file_path):
                 norm_face = (face_region - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(face_region)
                 variances.append(norm_face.std())
                 
-                # Visualization (Depth Only)
+                # Visualization
                 d_min_full, d_max_full = depth_map.min(), depth_map.max()
                 depth_norm = 255.0 * (depth_map - d_min_full) / (d_max_full - d_min_full) if d_max_full > d_min_full else np.zeros_like(depth_map)
                 depth_color = cv2.applyColorMap(depth_norm.astype(np.uint8), cv2.COLORMAP_INFERNO)
@@ -120,7 +115,7 @@ def process_media(file_path):
         duration = time.time() - start_time
         stats = f"Processed in {duration:.2f}s\nInfo: {len(frames)} frames @ {fps:.1f} FPS\nAnalysis: {liveness_result} (3Dness: {liveness_conf:.1f}%)\nAvg Variance: {avg_variance:.3f}"
         
-        return None, out_path, gr.update(visible=False), gr.update(visible=True), stats
+        return gr.update(value=None, visible=False), gr.update(value=out_path, visible=True), stats
 
 with gr.Blocks(title="DA3 Media Depth") as demo:
     gr.Markdown("# 🌊 Depth Anything 3: Universal Media Depth")
@@ -128,13 +123,11 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
     with gr.Row():
         with gr.Column():
             input_file = gr.File(label="Upload Image or Video")
-            # Combined preview area
             with gr.Group():
                 input_img_view = gr.Image(label="Input Preview", visible=False, height=250)
                 input_vid_view = gr.Video(label="Input Preview", visible=False, height=250)
             btn = gr.Button("Process Media", variant="primary")
         with gr.Column():
-            # Combined output area
             with gr.Group():
                 output_image = gr.Image(label="Depth Result", visible=False, height=250)
                 output_video = gr.Video(label="Depth Result", visible=False, height=250)
@@ -153,7 +146,7 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
     btn.click(
         fn=process_media, 
         inputs=input_file, 
-        outputs=[output_image, output_video, output_image, output_video, output_text]
+        outputs=[output_image, output_video, output_text]
     )
 
 if __name__ == "__main__":
