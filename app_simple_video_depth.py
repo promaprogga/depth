@@ -51,7 +51,7 @@ def process_video(video_path):
     
     h, w, _ = frames[0].shape
     # Side by side means 2 * width
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')
     out_video = cv2.VideoWriter(out_path, fourcc, fps, (w * 2, h))
     
     if not out_video.isOpened():
