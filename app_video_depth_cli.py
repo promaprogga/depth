@@ -6,7 +6,7 @@ import cv2
 import torch
 import numpy as np
 import sys
-import os
+import imageio
 from depth_anything_3.api import DepthAnything3
 
 
@@ -15,23 +15,17 @@ def process_video(video_path, output_path=None):
         print("Error: No video path provided")
         return None
     
-    # Check if file exists
-    if not os.path.exists(video_path):
-        print(f"Error: Video file not found: {video_path}")
-        return None
-
+    if not torch.cuda.is_available():
+        print("Warning: CUDA not available, using CPU (will be slow)")
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
     # Using DA3MONO-LARGE for monocular depth estimation
     model_name = "depth-anything/DA3MONO-LARGE"
     print(f"Loading model {model_name}...")
-    try:
-        model = DepthAnything3.from_pretrained(model_name).to(device)
-        print("Model loaded successfully")
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        return None
+    model = DepthAnything3.from_pretrained(model_name).to(device)
+    print("Model loaded successfully")
     
     # Open input video
     cap = cv2.VideoCapture(video_path)
@@ -51,61 +45,51 @@ def process_video(video_path, output_path=None):
     
     # Generate output path if not provided
     if output_path is None:
-        base, ext = os.path.splitext(video_path)
-        output_path = f"{base}_depth{ext}"
+        output_path = video_path.replace('.mp4', '_depth.mp4').replace('.avi', '_depth.avi')
     
-    # Use cv2.VideoWriter (matches app_simple_video_depth.py fix)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Use imageio for writing (more reliable than OpenCV VideoWriter)
+    writer = imageio.get_writer(output_path, fps=fps, codec='libx264', pixelformat='yuv420p')
     
-    if not writer.isOpened():
-        print(f"Error: Cannot open video writer for: {output_path}")
-        cap.release()
-        return None
-
     print(f"Output video: {output_path}")
     print("Processing frames...")
     
     frame_count = 0
-    try:
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Convert BGR to RGB for model inference
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            # Run inference
-            with torch.no_grad():
-                pred = model.inference([frame_rgb])
-                depth_map = pred.depth[0]  # [H, W] float
-            
-            # Normalize to 0-255 uint8
-            depth_min = depth_map.min()
-            depth_max = depth_map.max()
-            if depth_max > depth_min:
-                depth_norm = 255.0 * (depth_map - depth_min) / (depth_max - depth_min)
-            else:
-                depth_norm = np.zeros_like(depth_map)
-            
-            depth_uint8 = depth_norm.astype(np.uint8)
-            
-            # Apply color map (INFERNO)
-            depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
-            
-            # Write to video (cv2 expects BGR)
-            writer.write(depth_color)
-            
-            frame_count += 1
-            if frame_count % 10 == 0:
-                progress = (100 * frame_count / total_frames) if total_frames > 0 else 0
-                print(f"Processed {frame_count}/{total_frames} frames ({progress:.1f}%)")
-    except Exception as e:
-        print(f"Error during processing: {e}")
-    finally:
-        cap.release()
-        writer.release()
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Convert BGR to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Run inference
+        with torch.no_grad():
+            pred = model.inference([frame_rgb])
+            depth_map = pred.depth[0]  # [H, W] float
+        
+        # Normalize to 0-255 uint8
+        depth_min = depth_map.min()
+        depth_max = depth_map.max()
+        if depth_max > depth_min:
+            depth_norm = 255.0 * (depth_map - depth_min) / (depth_max - depth_min)
+        else:
+            depth_norm = np.zeros_like(depth_map)
+        
+        depth_uint8 = depth_norm.astype(np.uint8)
+        
+        # Apply color map (INFERNO)
+        depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)
+        
+        # Convert BGR to RGB for imageio
+        depth_rgb = cv2.cvtColor(depth_color, cv2.COLOR_BGR2RGB)
+        writer.append_data(depth_rgb)
+        
+        frame_count += 1
+        if frame_count % 10 == 0:
+            print(f"Processed {frame_count}/{total_frames} frames ({100*frame_count/total_frames:.1f}%)")
+    
+    cap.release()
+    writer.close()
     
     # Clear memory
     del model
@@ -117,9 +101,9 @@ def process_video(video_path, output_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Depth Anything 3 - Video Depth Estimation (CLI)")
+    parser = argparse.ArgumentParser(description="Depth Anything 3 - Video Depth Estimation")
     parser.add_argument("input_video", help="Path to input video file")
-    parser.add_argument("-o", "--output", help="Path to output video file (optional)")
+    parser.add_argument("-o", "--output", help="Path to output video file (default: input_depth.mp4)")
     
     args = parser.parse_args()
     

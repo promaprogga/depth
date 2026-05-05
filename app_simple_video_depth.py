@@ -8,7 +8,7 @@ import time
 from PIL import Image
 from depth_anything_3.api import DepthAnything3
 
-def process_media(file_path):
+def process_media(file_path, target_fps=15, threshold=25):
     if not file_path:
         return gr.update(visible=False), gr.update(visible=False), "Please upload a file."
         
@@ -44,7 +44,7 @@ def process_media(file_path):
         norm_face = (face_region - d_min) / (d_max - d_min) if d_max > d_min else np.zeros_like(face_region)
         variance = norm_face.std()
         liveness_conf = min(100, max(0, (variance - 0.12) / 0.18 * 100))
-        liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
+        liveness_result = "REAL 3D" if liveness_conf > threshold else "FLAT/SPOOF"
         
         # Color mapping
         depth_min, depth_max = depth_map.min(), depth_map.max()
@@ -63,14 +63,21 @@ def process_media(file_path):
     else:
         from moviepy.editor import ImageSequenceClip
         cap = cv2.VideoCapture(filename)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0 or np.isnan(fps): fps = 30.0
+        orig_fps = cap.get(cv2.CAP_PROP_FPS)
+        if orig_fps <= 0 or np.isnan(orig_fps): orig_fps = 30.0
         
         frames = []
+        # Subsample frames to match target_fps
+        frame_idx = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret: break
-            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            
+            # Simple sampling logic to reach target_fps
+            # If target_fps is 15 and orig_fps is 30, we take every 2nd frame
+            if int(frame_idx * target_fps / orig_fps) > int((frame_idx - 1) * target_fps / orig_fps):
+                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            frame_idx += 1
         cap.release()
         
         if not frames: return gr.update(visible=False), gr.update(visible=False), "Failed to read video"
@@ -106,18 +113,18 @@ def process_media(file_path):
 
         avg_variance = np.mean(variances)
         liveness_conf = min(100, max(0, (avg_variance - 0.12) / 0.18 * 100))
-        liveness_result = "REAL 3D" if liveness_conf > 50 else "FLAT/SPOOF"
+        liveness_result = "REAL 3D" if liveness_conf > threshold else "FLAT/SPOOF"
         
         # Use a temporary file to ensure Gradio can serve it reliably
         fd, out_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd)
         
-        clip = ImageSequenceClip(processed_frames, fps=fps)
+        clip = ImageSequenceClip(processed_frames, fps=target_fps)
         # yuv420p is the most compatible pixel format for web browsers
-        clip.write_videofile(out_path, codec="libx264", audio=False, ffmpeg_params=["-pix_fmt", "yuv420p"])
+        clip.write_videofile(out_path, codec="libx264", audio=False, ffmpeg_params=["-pix_fmt", "yuv420p"], logger=None)
         
         duration = time.time() - start_time
-        stats = f"Processed in {duration:.2f}s\nInfo: {len(frames)} frames @ {fps:.1f} FPS\nAnalysis: {liveness_result} (3Dness: {liveness_conf:.1f}%)\nAvg Variance: {avg_variance:.3f}"
+        stats = f"Processed in {duration:.2f}s\nInfo: {len(frames)} frames @ {target_fps} FPS\nAnalysis: {liveness_result} (3Dness: {liveness_conf:.1f}%)\nAvg Variance: {avg_variance:.3f}"
         
         return gr.update(value=None, visible=False), gr.update(value=out_path, visible=True), stats
 
@@ -130,6 +137,11 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
             with gr.Group():
                 input_img_view = gr.Image(label="Input Preview", visible=False, height=250)
                 input_vid_view = gr.Video(label="Input Preview", visible=False, height=250)
+            
+            with gr.Accordion("Advanced Settings", open=True):
+                fps_slider = gr.Slider(minimum=1, maximum=60, value=15, step=1, label="Target Video FPS")
+                threshold_slider = gr.Slider(minimum=0, maximum=100, value=25, step=1, label="Liveness Threshold (%)")
+                
             btn = gr.Button("Process Media", variant="primary")
         with gr.Column():
             with gr.Group():
@@ -152,7 +164,7 @@ with gr.Blocks(title="DA3 Media Depth") as demo:
     
     btn.click(
         fn=process_media, 
-        inputs=input_file, 
+        inputs=[input_file, fps_slider, threshold_slider], 
         outputs=[output_image, output_video, output_text]
     )
 
